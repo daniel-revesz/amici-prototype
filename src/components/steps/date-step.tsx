@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { parse, format, isValid } from "date-fns";
 import { StepLayout } from "../step-layout";
 import { Button } from "../ui/button";
+import { Calendar } from "../ui/calendar";
 import { useRequest } from "@/context/request-context";
 
 const months = [
@@ -17,26 +19,90 @@ const months = [
 
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-const calendarDays = [
-  [null, null, null, null, null, null, 1],
-  [2, 3, 4, 5, 6, 7, 8],
-  [9, 10, 11, 12, 13, 14, 15],
-  [16, 17, 18, 19, 20, 21, 22],
-  [23, 24, 25, 26, 27, 28, 29],
-  [30, 31, null, null, null, null, null],
+const DATE_FORMATS = [
+  "MMMM d, yyyy",
+  "MMMM d yyyy",
+  "MMM d, yyyy",
+  "MMM d yyyy",
+  "MM/dd/yyyy",
+  "M/d/yyyy",
+  "yyyy-MM-dd",
+  "d MMMM yyyy",
+  "d MMM yyyy",
+  "MMMM d",
+  "MMM d",
 ];
+
+function tryParseDate(text: string): Date | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  const referenceDate = new Date();
+
+  for (const fmt of DATE_FORMATS) {
+    const result = parse(trimmed, fmt, referenceDate);
+    if (isValid(result)) {
+      return result;
+    }
+  }
+  return null;
+}
 
 export function DateStep() {
   const { data, updateData, setStep } = useRequest();
   const [dateType, setDateType] = useState<"specific" | "flexible">(data.dateType);
-  const [selectedDay, setSelectedDay] = useState<number | null>(10);
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(
+    data.selectedDate ? new Date(data.selectedDate) : undefined
+  );
+  const [inputText, setInputText] = useState<string>(
+    data.selectedDate ? format(new Date(data.selectedDate), "MMMM d, yyyy") : ""
+  );
+  const [displayMonth, setDisplayMonth] = useState<Date>(
+    data.selectedDate ? new Date(data.selectedDate) : new Date()
+  );
+  const [isInputInvalid, setIsInputInvalid] = useState(false);
   const [selectedMonths, setSelectedMonths] = useState<string[]>(data.selectedMonths);
   const [selectedWeekdays, setSelectedWeekdays] = useState<string[]>(data.selectedWeekdays);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const text = e.target.value;
+    setInputText(text);
+
+    const parsed = tryParseDate(text);
+    if (parsed) {
+      setSelectedDate(parsed);
+      setDisplayMonth(parsed);
+      setIsInputInvalid(false);
+    } else {
+      setIsInputInvalid(text.trim().length > 0);
+    }
+  };
+
+  const handleInputBlur = () => {
+    if (selectedDate && !isInputInvalid) {
+      setInputText(format(selectedDate, "MMMM d, yyyy"));
+    }
+  };
+
+  const handleCalendarSelect = (date: Date | undefined) => {
+    setSelectedDate(date);
+    if (date) {
+      setInputText(format(date, "MMMM d, yyyy"));
+      setDisplayMonth(date);
+      setIsInputInvalid(false);
+    } else {
+      setInputText("");
+      setIsInputInvalid(false);
+    }
+  };
 
   const handleContinue = () => {
     updateData({
       dateType,
-      selectedDate: dateType === "specific" ? `March ${selectedDay}` : null,
+      selectedDate:
+        dateType === "specific" && selectedDate
+          ? format(selectedDate, "yyyy-MM-dd")
+          : null,
       selectedMonths,
       selectedWeekdays,
     });
@@ -84,49 +150,37 @@ export function DateStep() {
       {dateType === "specific" ? (
         <div className="w-full flex flex-col items-center gap-xl">
           {/* Date Input */}
-          <div className="w-full border border-white-30 rounded-sm px-md py-sm">
+          <div
+            className={`w-full border rounded-sm px-md py-sm ${
+              isInputInvalid ? "border-accent-red" : "border-white-30"
+            }`}
+          >
             <p className="text-[14px] text-white-70 leading-[1.4]">Date</p>
-            <p className="text-[20px] text-white leading-[1.4]">
-              {selectedDay ? `March ${selectedDay}` : "Select a date"}
-            </p>
+            <input
+              type="text"
+              value={inputText}
+              onChange={handleInputChange}
+              onBlur={handleInputBlur}
+              placeholder="Select a date"
+              className="w-full bg-transparent text-[20px] text-white leading-[1.4] outline-none placeholder:text-white-30"
+            />
+            {isInputInvalid && (
+              <p className="text-[12px] text-accent-red leading-[1.4] mt-2xs">
+                Try a format like March 10, 03/10/2025, or 2025-03-10
+              </p>
+            )}
           </div>
 
           {/* Calendar */}
-          <div className="relative w-full flex items-center justify-center">
-            <button className="absolute left-0 top-1/2 -translate-y-1/2 text-white-70 text-[24px] p-sm z-10">
-              ←
-            </button>
-            <div className="bg-dark-2 rounded-lg p-md w-[360px]">
-              <p className="text-[20px] text-white text-center mb-md leading-[1.4]">
-                March 2025
-              </p>
-              <div className="grid grid-cols-7 gap-y-xs">
-                {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
-                  <div key={d} className="text-center text-white text-[20px] leading-[1.4] h-[24px]">
-                    {d}
-                  </div>
-                ))}
-                {calendarDays.flat().map((day, i) => (
-                  <button
-                    key={i}
-                    onClick={() => day && setSelectedDay(day)}
-                    disabled={!day}
-                    className={`flex items-center justify-center size-[44px] rounded-sm text-[20px] leading-[1.4] transition-colors ${
-                      day === selectedDay
-                        ? "bg-white text-dark-1"
-                        : day
-                        ? "text-white hover:bg-white-10"
-                        : "text-transparent"
-                    }`}
-                  >
-                    {day ?? ""}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <button className="absolute right-0 top-1/2 -translate-y-1/2 text-white-70 text-[24px] p-sm z-10">
-              →
-            </button>
+          <div className="w-full flex justify-center">
+            <Calendar
+              mode="single"
+              selected={selectedDate}
+              onSelect={handleCalendarSelect}
+              month={displayMonth}
+              onMonthChange={setDisplayMonth}
+              className="bg-dark-2 rounded-lg p-md"
+            />
           </div>
         </div>
       ) : (
@@ -185,7 +239,8 @@ export function DateStep() {
 
       <Button
         onClick={handleContinue}
-        className="w-full max-w-[264px] h-[56px] rounded-sm bg-white text-dark-1 text-[20px] font-bold hover:bg-white/90"
+        disabled={dateType === "specific" && (!selectedDate || isInputInvalid)}
+        className="w-full max-w-[264px] h-[56px] rounded-sm bg-white text-dark-1 text-[20px] font-bold hover:bg-white/90 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         Continue
       </Button>
